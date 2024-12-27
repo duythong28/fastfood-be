@@ -84,10 +84,16 @@ export class ChatbotService {
 
       if (result.fulfillmentText.substring(0, 7) === 'OrderId') {
         const orderId = result.fulfillmentText.substring(9);
-        const response = 'Chào bạn! Cảm ơn bạn đã đặt hàng tại Foodzy.';
+        let response = 'Chào bạn! Cảm ơn bạn đã đặt hàng tại Foodzy.';
+
         const data = await this.prismaService.orders.findUnique({
           where: { id: orderId },
         });
+
+        if (!data) {
+          response = 'Mã đơn hàng không tồn tại!';
+        }
+
         return { response, data };
       }
 
