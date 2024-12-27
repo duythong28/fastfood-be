@@ -26,6 +26,8 @@ import { CreateOrderDto } from './dto/create_order.dto';
 import { CreateReviewDto } from './dto/create_review.dto';
 import { UpdateOrderStatusDto } from './dto/update_order_status.dto';
 import { ChatbotService } from '../chatbot/chatbot.service';
+import { StatisticService } from '../statistic/statistic.service';
+import { ORDER_STATUS } from 'src/constants/enum';
 
 const {
   ORDER: {
@@ -45,6 +47,7 @@ export class OrdersController {
   constructor(
     private readonly orderService: OrderService,
     private readonly chatbotService: ChatbotService,
+    private readonly statisticService: StatisticService,
   ) {}
   @Get(GET_FULL_LIST)
   @Roles(ROLE.ADMIN)
@@ -90,6 +93,11 @@ export class OrdersController {
   ) {
     const order = await this.orderService.updateOrderStatus(id, dto);
     const message = 'Order status updated successfully';
+
+    if (order.status === ORDER_STATUS.SUCCESS) {
+      this.statisticService.createStatistic(order.total_price);
+    }
+
     return new StandardResponse<Orders>(order, message, HttpStatusCode.OK);
   }
   @Get(GET_ONE_BY_ADMIN)
