@@ -102,7 +102,7 @@ class SignInService {
     const jwtPayload = payload;
     const access_token = await this.jwtService.signAsync(jwtPayload, {
       secret: this.configService.get('jwt_access_secret'),
-      expiresIn: '15m',
+      expiresIn: '1d',
     });
     const refresh_token = await this.jwtService.signAsync(jwtPayload, {
       secret: this.configService.get('jwt_refresh_secret'),
