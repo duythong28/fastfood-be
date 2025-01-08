@@ -90,7 +90,7 @@ export class OrdersController {
   ) {
     const order = await this.orderService.createOrder(session, dto);
     const message = 'Order created successfully';
-    this.chatbotService.updateEntityOrderId(order.id);
+    await this.chatbotService.updateEntityOrderId(order.id);
     return new StandardResponse<Orders>(order, message, HttpStatusCode.CREATED);
   }
   @Post(UPDATE_STATUS)

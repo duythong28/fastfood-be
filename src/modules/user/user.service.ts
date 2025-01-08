@@ -107,7 +107,7 @@ export class UsersService {
       const { birthday, fullName, ...data } = dto;
       const filteredData = Object.fromEntries(
         Object.entries(data).filter(
-          ([_, value]) => value !== null && value !== '',
+          ([value]) => value !== null && value !== '',
         ),
       );
       const updatedUser = await this.prisma.users.update({
@@ -190,17 +190,18 @@ export class UsersService {
         throw new Error('Failed to upload images!');
       }
       imageUrls = uploadImagesData.urls;
-      const { birthday, fullName, ...data } = body;
-      const updatedUser = await this.prisma.users.update({
-        where: { id: body.id },
-        data: {
-          full_name: fullName ?? user.full_name,
-          birthday: birthday ? new Date(birthday) : user.birthday,
-          ...data,
-          avatar_url: image ? imageUrls[0] : user.avatar_url,
-        },
-      });
-      return updatedUser;
     }
+    const { birthday, fullName, ...data } = body;
+    const updatedUser = await this.prisma.users.update({
+      where: { id: body.id },
+      data: {
+        ...data,
+        full_name: fullName ?? user.full_name,
+        birthday: birthday ? new Date(birthday) : user.birthday,
+        phone: data.phone ?? user.phone,
+        avatar_url: image ? imageUrls[0] : user.avatar_url,
+      },
+    });
+    return updatedUser;
   }
 }

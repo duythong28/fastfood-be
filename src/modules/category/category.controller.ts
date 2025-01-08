@@ -49,7 +49,7 @@ export class CategoryController {
     @Body() body: CreateCategoryDto,
   ): Promise<StandardResponse<Category>> {
     const category = await this.categoryService.create(body);
-    this.chatbotService.updateEntityCategory(body.name, [body.name]);
+    await this.chatbotService.updateEntityCategory(body.name, [body.name]);
     const message = 'Create category successfully';
     return new StandardResponse(category, message, HttpStatusCode.CREATED);
   }
@@ -92,9 +92,12 @@ export class CategoryController {
   }
   @Post(DISABLE)
   async disableCategory(@Param('id', ParseUUIDPipe) id: string) {
-    const result = await this.categoryService.disableCategory(id);
+    const category = await this.categoryService.disableCategory(id);
     const message = 'Disable category successfully';
-    return new StandardResponse(result, message, HttpStatusCode.OK);
+
+    await this.chatbotService.deleteEntityCategory(category.name);
+
+    return new StandardResponse(category, message, HttpStatusCode.OK);
   }
   @Put(UPDATE)
   async update(
@@ -103,7 +106,7 @@ export class CategoryController {
   ) {
     const category = await this.categoryService.update(id, dto);
     const message = 'Update category successfully';
-    this.chatbotService.updateEntityCategory(dto.name, [dto.name]);
+    await this.chatbotService.updateEntityCategory(dto.name, [dto.name]);
     return new StandardResponse(category, message, HttpStatusCode.OK);
   }
   @Post(ENABLE)
@@ -112,6 +115,10 @@ export class CategoryController {
   ): Promise<StandardResponse<Category>> {
     const category = await this.categoryService.enable(id);
     const message = 'Enable category successfully';
+
+    await this.chatbotService.updateEntityCategory(category.name, [
+      category.name,
+    ]);
     return new StandardResponse(category, message, HttpStatusCode.OK);
   }
   @Get(SEARCH)

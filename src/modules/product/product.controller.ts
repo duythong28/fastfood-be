@@ -97,9 +97,12 @@ export class ProductsController {
   @UsePipes(new ValidationPipe({ transform: true }))
   async getAllProducts(
     @Query() productQuery: ProductQuery,
+    @Query('categoryStatus') categoryStatus?: boolean,
   ): Promise<PageResponseDto<Products>> {
-    const { products, itemCount } =
-      await this.productService.getAllProducts(productQuery);
+    const { products, itemCount } = await this.productService.getAllProducts(
+      productQuery,
+      categoryStatus,
+    );
     const pageOptionsDto = new PageOptionsDto(productQuery);
     const meta = new PageResponseMetaDto({
       pageOptionsDto,
