@@ -74,6 +74,7 @@ export class ChatbotService {
             status: 'ACTIVE',
             Category: {
               name: category,
+              is_disable: false,
             },
           },
         });
