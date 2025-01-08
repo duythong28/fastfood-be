@@ -69,11 +69,11 @@ export class CategoryService {
     if (!category) {
       throw new BadRequestException('Category not found');
     }
-    const result = await this.prisma.category.update({
+    await this.prisma.category.update({
       where: { id: id },
       data: { is_disable: true },
     });
-    return result;
+    return category;
   }
   async enable(id: string) {
     const category = await this.prisma.category.findUnique({

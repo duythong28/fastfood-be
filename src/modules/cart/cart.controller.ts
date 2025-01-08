@@ -102,7 +102,7 @@ export class CartController {
     @Body() dto: CheckOutDto,
   ) {
     const result = await this.cartService.checkoutCart(session, dto);
-    this.chatbotService.updateEntityOrderId(result.id);
+    await this.chatbotService.updateEntityOrderId(result.id);
     return result;
   }
 }
