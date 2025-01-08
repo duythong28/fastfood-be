@@ -7,7 +7,12 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { TUserSession } from 'src/common/decorators/user-session.decorator';
-import { OrderStatus, ReviewState, ReviewType } from '@prisma/client';
+import {
+  OrderStatus,
+  PaymentMethod,
+  ReviewState,
+  ReviewType,
+} from '@prisma/client';
 import { OrderPageOptionsDto } from './dto/find_all_order.dto';
 import { CreateOrderDto } from './dto/create_order.dto';
 import { CreateReviewDto } from './dto/create_review.dto';
@@ -20,6 +25,7 @@ import * as crypto from 'crypto';
 import { Request, Response } from 'express';
 import { GeminiService } from '../gen_ai/gemini.service';
 import HttpStatusCode from 'src/constants/http_status_code';
+import { EmailService } from '../email/email.service';
 
 @Injectable()
 export class OrderService {
@@ -27,6 +33,7 @@ export class OrderService {
     private readonly prisma: PrismaService,
     private readonly config: ConfigService,
     private readonly geminiService: GeminiService,
+    private readonly emailService: EmailService,
   ) {}
   async createOrder(session: TUserSession, dto: CreateOrderDto) {
     const productIds = dto.items.map((item) => item.productId);
@@ -43,6 +50,9 @@ export class OrderService {
     if (products.length !== productIds.length) {
       throw new NotFoundException('Some products are not found');
     }
+    const user = await this.prisma.users.findUnique({
+      where: { id: session.id },
+    });
     const productPriceMap = new Map(
       products.map((product) => [
         product.id,
@@ -53,52 +63,124 @@ export class OrderService {
       ]),
     );
     try {
-      return await this.prisma.$transaction(async (tx) => {
-        await tx.cartItems.deleteMany({
-          where: {
-            id: { in: cartItemIds },
-          },
-        });
-        const order = await tx.orders.create({
-          data: {
-            user_id: session.id,
-            full_name: dto.fullName,
-            phone_number: dto.phoneNumber,
-            address: dto.address,
-            payment_method: dto.paymentMethod,
-          },
-        });
-        const orderItems = dto.items.map((item) => {
-          const { price, finalPrice } = productPriceMap.get(item.productId);
-          const totalPrice = Number(finalPrice) * item.quantity;
-          return {
-            order_id: order.id,
-            product_id: item.productId,
-            quantity: item.quantity,
-            price,
-            total_price: totalPrice,
-          };
-        });
-        await tx.orderItems.createMany({ data: orderItems });
-        const totalPrice = orderItems.reduce(
-          (acc, item) => acc + item.total_price,
-          0,
-        );
-        const updatedOrder = await tx.orders.update({
-          where: { id: order.id },
-          data: {
-            total_price: totalPrice,
-          },
-          include: {
-            OrderItems: {
+      return await this.prisma.$transaction(
+        async (tx) => {
+          await tx.cartItems.deleteMany({
+            where: {
+              id: { in: cartItemIds },
+            },
+          });
+          let order = undefined;
+          if (dto.paymentMethod === PaymentMethod.CASH) {
+            const orderTemp = await tx.orders.create({
+              data: {
+                user_id: session.id,
+                full_name: dto.fullName,
+                phone_number: dto.phoneNumber,
+                address: dto.address,
+                payment_method: dto.paymentMethod,
+                status: ORDER_STATUS.PROCESSING as OrderStatus,
+              },
+            });
+            const orderItems = dto.items.map((item) => {
+              const { price, finalPrice } = productPriceMap.get(item.productId);
+              const totalPrice = Number(finalPrice) * item.quantity;
+              return {
+                order_id: orderTemp.id,
+                product_id: item.productId,
+                quantity: item.quantity,
+                price,
+                total_price: totalPrice,
+              };
+            });
+            await tx.orderItems.createMany({ data: orderItems });
+            const totalPrice = orderItems.reduce(
+              (acc, item) => acc + item.total_price,
+              0,
+            );
+            const updatedOrder = await tx.orders.update({
+              where: { id: orderTemp.id },
+              data: {
+                total_price: totalPrice,
+              },
               include: {
-                product: true,
+                OrderItems: {
+                  include: {
+                    product: true,
+                  },
+                },
+              },
+            });
+            order = await tx.orders.findFirst({
+              where: { id: orderTemp.id },
+              include: {
+                OrderItems: {
+                  include: {
+                    product: true,
+                  },
+                },
+              },
+            });
+            await this.emailService.sendOrderProcessing({
+              user: user,
+              order: {
+                ...order,
+                total_price: Number(order.total_price),
+                OrderItems: order.OrderItems.map((item) => ({
+                  ...item,
+                  price: Number(item.price),
+                  product: item.product,
+                })),
+              },
+            });
+            return updatedOrder;
+          } else {
+            const orderTemp = await tx.orders.create({
+              data: {
+                user: { connect: { id: session.id } },
+                full_name: dto.fullName,
+                phone_number: dto.phoneNumber,
+                payment_method: dto.paymentMethod,
+                address: dto.address,
+              },
+            });
+            order = orderTemp;
+          }
+          const orderItems = dto.items.map((item) => {
+            const { price, finalPrice } = productPriceMap.get(item.productId);
+            const totalPrice = Number(finalPrice) * item.quantity;
+            return {
+              order_id: order.id,
+              product_id: item.productId,
+              quantity: item.quantity,
+              price,
+              total_price: totalPrice,
+            };
+          });
+          await tx.orderItems.createMany({ data: orderItems });
+          const totalPrice = orderItems.reduce(
+            (acc, item) => acc + item.total_price,
+            0,
+          );
+          const updatedOrder = await tx.orders.update({
+            where: { id: order.id },
+            data: {
+              total_price: totalPrice,
+            },
+            include: {
+              OrderItems: {
+                include: {
+                  product: true,
+                },
               },
             },
-          },
-        });
-        return updatedOrder;
-      });
+          });
+          return updatedOrder;
+        },
+        {
+          timeout: 20000,
+        },
+      );
     } catch (error) {
       console.log('Error:', error);
       throw new Error('Failed to create order');
@@ -206,6 +288,31 @@ export class OrderService {
             where: { id },
             data: { status: dto.status },
           });
+          const order = await tx.orders.findUnique({
+            where: { id: updatedOrder.id },
+            include: {
+              OrderItems: {
+                include: {
+                  product: true,
+                },
+              },
+            },
+          });
+          const user = await tx.users.findUnique({
+            where: { id: order.user_id },
+          });
+          await this.emailService.sendOrderRejected({
+            user,
+            order: {
+              ...order,
+              total_price: Number(order.total_price),
+              OrderItems: order.OrderItems.map((item) => ({
+                ...item,
+                price: Number(item.price),
+                product: item.product,
+              })),
+            },
+          });
           return updatedOrder;
         });
       } catch (error) {
@@ -214,6 +321,74 @@ export class OrderService {
       }
     }
 
+    if (dto.status === ORDER_STATUS.SUCCESS) {
+      const orderItems = await this.prisma.orderItems.findMany({
+        where: { order_id: id },
+      });
+
+      for (const orderItem of orderItems) {
+        const product = await this.prisma.products.findUnique({
+          where: { id: orderItem.product_id },
+          select: { sold_quantity: true },
+        });
+
+        await this.prisma.products.update({
+          where: { id: orderItem.product_id },
+          data: { sold_quantity: product.sold_quantity + orderItem.quantity },
+        });
+      }
+      const order = await this.prisma.orders.findUnique({
+        where: { id: id },
+        include: {
+          OrderItems: {
+            include: {
+              product: true,
+            },
+          },
+        },
+      });
+      const user = await this.prisma.users.findUnique({
+        where: { id: order.user_id },
+      });
+      await this.emailService.sendOrderSuccess({
+        user,
+        order: {
+          ...order,
+          total_price: Number(order.total_price),
+          OrderItems: order.OrderItems.map((item) => ({
+            ...item,
+            price: Number(item.price),
+            product: item.product,
+          })),
+        },
+      });
+    } else if (dto.status === ORDER_STATUS.DELIVERED) {
+      const order = await this.prisma.orders.findUnique({
+        where: { id: id },
+        include: {
+          OrderItems: {
+            include: {
+              product: true,
+            },
+          },
+        },
+      });
+      const user = await this.prisma.users.findUnique({
+        where: { id: order.user_id },
+      });
+      await this.emailService.sendOrderDelivering({
+        user,
+        order: {
+          ...order,
+          total_price: Number(order.total_price),
+          OrderItems: order.OrderItems.map((item) => ({
+            ...item,
+            price: Number(item.price),
+            product: item.product,
+          })),
+        },
+      });
+    }
     return await this.prisma.orders.update({
       where: { id },
       data: { status: dto.status },
@@ -465,6 +640,33 @@ export class OrderService {
             status: ORDER_STATUS.PROCESSING as OrderStatus,
           },
         });
+        const order = await this.prisma.orders.findUnique({
+          where: { id: orderId as string },
+          include: {
+            OrderItems: {
+              include: {
+                product: true,
+              },
+            },
+          },
+        });
+        const user = await this.prisma.users.findUnique({
+          where: { id: order.user_id },
+        });
+
+        await this.emailService.sendOrderProcessing({
+          user,
+          order: {
+            ...order,
+            total_price: Number(order.total_price),
+            OrderItems: order.OrderItems.map((item) => ({
+              ...item,
+              price: Number(item.price),
+              product: item.product,
+            })),
+          },
+        });
+
         return res.status(204).json({
           resultCode: 0,
           message: 'Success',

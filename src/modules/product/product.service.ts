@@ -13,67 +13,152 @@ import { ProductQuery } from './query/product.query';
 export class ProductsService {
   constructor(private readonly prismaService: PrismaService) {}
 
-  async getAllProducts(productQuery: ProductQuery) {
+  async getAllProducts(productQuery: ProductQuery, categoryStatus?: boolean) {
+    const AND = [
+      {
+        price: {
+          ...(productQuery.min_price && { gte: productQuery.min_price }),
+          ...(productQuery.max_price && { lte: productQuery.max_price }),
+        },
+      },
+      {
+        avg_stars: {
+          ...(productQuery.min_star && { gte: productQuery.min_star }),
+          ...(productQuery.max_star && { lte: productQuery.max_star }),
+        },
+      },
+      ...(productQuery.categoryId
+        ? [
+            {
+              Category: { id: productQuery.categoryId },
+            },
+          ]
+        : []),
+      ...(categoryStatus !== undefined
+        ? [
+            {
+              Category: { is_disable: categoryStatus },
+            },
+          ]
+        : []),
+    ].filter(
+      (condition) =>
+        Object.keys(condition).length > 0 &&
+        Object.keys(Object.values(condition)[0]).length > 0,
+    );
+
+    const condition1 =
+      productQuery.search?.replace(/\s+/g, '&').trim() ??
+      productQuery.title?.replace(/\s+/g, '&').trim();
     const products = await this.prismaService.products.findMany({
       where: {
-        title: {
-          contains: productQuery.title ? productQuery.title : undefined,
-          mode: 'insensitive',
-        },
-        Category: {
-          name: {
-            contains: productQuery.search ? productQuery.search : undefined,
-            mode: 'insensitive',
-          },
-        },
+        ...(condition1 !== undefined && {
+          OR: [
+            {
+              title: {
+                search: condition1,
+                mode: 'insensitive',
+              },
+            },
+            {
+              description: {
+                search: condition1,
+                mode: 'insensitive',
+              },
+            },
+            {
+              description: {
+                contains: productQuery.title,
+                mode: 'insensitive',
+              },
+            },
+            {
+              Category: {
+                name: {
+                  contains: productQuery.title,
+                  mode: 'insensitive',
+                },
+              },
+            },
+            {
+              Category: {
+                name: {
+                  search: condition1,
+                  mode: 'insensitive',
+                },
+              },
+            },
+          ],
+        }),
         ...(productQuery.status ? { status: productQuery.status } : {}),
-        ...(productQuery.min_price && {
-          price: { gte: productQuery.min_price },
-        }),
-        ...(productQuery.max_price && {
-          price: { lte: productQuery.max_price },
-        }),
-        ...(productQuery.min_star && {
-          avg_stars: { gte: productQuery.min_star },
-        }),
-        ...(productQuery.max_star && {
-          avg_stars: { lte: productQuery.max_star },
-        }),
+        AND: AND,
       },
       include: {
         Category: true,
       },
-      orderBy: {
-        [productQuery.sortBy || 'created_at']: productQuery.order || 'desc',
-      },
+      orderBy: [
+        condition1 !== undefined
+          ? {
+              _relevance: {
+                fields: ['title', 'description'],
+                search: condition1,
+                sort: 'desc',
+              },
+            }
+          : {},
+        { [productQuery.sortBy]: productQuery.order },
+      ],
       skip: productQuery.skip,
       take: productQuery.take,
     });
     const itemCount = await this.prismaService.products.count({
       where: {
-        title: {
-          contains: productQuery.title ? productQuery.title : undefined,
-          mode: 'insensitive',
-        },
-        Category: {
-          name: {
-            contains: productQuery.search ? productQuery.search : undefined,
-            mode: 'insensitive',
-          },
-        },
+        ...(condition1 !== undefined && {
+          OR: [
+            {
+              title: {
+                search: condition1,
+                mode: 'insensitive',
+              },
+            },
+            {
+              title: {
+                contains: productQuery.title,
+                mode: 'insensitive',
+              },
+            },
+            {
+              description: {
+                search: condition1,
+                mode: 'insensitive',
+              },
+            },
+            {
+              description: {
+                contains: productQuery.title,
+                mode: 'insensitive',
+              },
+            },
+            {
+              Category: {
+                name: {
+                  contains: productQuery.search,
+                  mode: 'insensitive',
+                },
+              },
+            },
+            {
+              Category: {
+                name: {
+                  search: condition1,
+                  mode: 'insensitive',
+                },
+              },
+            },
+          ],
+        }),
         ...(productQuery.status ? { status: productQuery.status } : {}),
-        ...(productQuery.min_price && {
-          price: { gte: productQuery.min_price },
-        }),
-        ...(productQuery.max_price && {
-          price: { lte: productQuery.max_price },
-        }),
-        ...(productQuery.min_star && {
-          avg_stars: { gte: productQuery.min_star },
-        }),
-        ...(productQuery.max_star && {
-          avg_stars: { lte: productQuery.max_star },
-        }),
+        AND: AND,
       },
     });
     return { products, itemCount };
@@ -143,16 +228,18 @@ export class ProductsService {
         }
         imageUrls = uploadImagesData.urls;
       }
+      const { categoryId, image_url, ...dtoExcept } = dto;
       return await this.prismaService.$transaction(async (tx) => {
         const updatedProduct = await tx.products.update({
           where: { id },
           data: {
-            title: dto.title,
-            description: dto.description,
+            ...dtoExcept,
+            ...(categoryId && {
+              Category: { connect: { id: dto.categoryId } },
+            }),
             image_url: imageUrls.length
-              ? [...(dto.image_url ? dto.image_url : []), ...imageUrls]
+              ? [...(image_url ? image_url : []), ...imageUrls]
               : existingProduct.image_url,
-            price: dto?.price ?? existingProduct.price,
           },
         });
         return updatedProduct;

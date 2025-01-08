@@ -6,6 +6,7 @@ import { ChatbotModule } from '../chatbot/chatbot.module';
 import { StatisticModule } from '../statistic/statistic.module';
 import { ConfigModule } from '@nestjs/config';
 import { GeminiModule } from '../gen_ai/gemini.module';
+import { EmailModule } from '../email/email.module';
 
 @Module({
   imports: [
@@ -14,6 +15,7 @@ import { GeminiModule } from '../gen_ai/gemini.module';
     StatisticModule,
     ConfigModule,
     GeminiModule,
+    EmailModule,
   ],
   providers: [OrderService],
   controllers: [OrdersController],

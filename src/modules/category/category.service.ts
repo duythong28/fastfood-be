@@ -69,11 +69,11 @@ export class CategoryService {
     if (!category) {
       throw new BadRequestException('Category not found');
     }
-    const result = await this.prisma.category.update({
+    await this.prisma.category.update({
       where: { id: id },
       data: { is_disable: true },
     });
-    return result;
+    return category;
   }
   async enable(id: string) {
     const category = await this.prisma.category.findUnique({
@@ -93,25 +93,59 @@ export class CategoryService {
     pageOption: CategoryPageOptionsDto,
     disable: boolean,
   ) {
+    const condition1 = query?.split(/\s+/).filter(Boolean).join(' & ');
     const categories = await this.prisma.category.findMany({
       where: {
-        name: {
-          contains: query,
-          mode: 'insensitive',
-        },
+        ...(condition1 !== undefined && {
+          OR: [
+            {
+              name: {
+                search: condition1,
+                mode: 'insensitive',
+              },
+            },
+            {
+              name: {
+                contains: query,
+                mode: 'insensitive',
+              },
+            },
+          ],
+        }),
         ...(disable !== undefined && {
           is_disable: disable,
         }),
       },
       take: pageOption.take,
       skip: pageOption.skip,
-      orderBy: { [pageOption.sortBy]: pageOption.order },
+      orderBy: query
+        ? {
+            _relevance: {
+              fields: ['name'],
+              search: condition1,
+              sort: 'desc',
+            },
+          }
+        : { [pageOption.sortBy]: pageOption.order },
     });
     const itemCount = await this.prisma.category.count({
       where: {
-        name: {
-          contains: query,
-        },
+        ...(condition1 !== undefined && {
+          OR: [
+            {
+              name: {
+                search: condition1,
+                mode: 'insensitive',
+              },
+            },
+            {
+              name: {
+                contains: query,
+                mode: 'insensitive',
+              },
+            },
+          ],
+        }),
         ...(disable !== undefined && {
           is_disable: disable,
         }),

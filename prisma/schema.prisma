@@ -5,12 +5,14 @@
 // Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
 
 generator client {
-  provider = "prisma-client-js"
+  provider        = "prisma-client-js"
+  previewFeatures = ["fullTextSearchPostgres"]
 }
 
 datasource db {
   provider = "postgresql"
   url      = env("DATABASE_URL")
+
   // directUrl = env("DIRECT_URL")
 }
 
@@ -19,7 +21,7 @@ model Users {
   email               String?         @unique @db.VarChar(100)
   password            String
   full_name           String
-  phone               String?         @unique @db.VarChar(20)
+  phone               String?         @db.VarChar(20)
   birthday            DateTime
   gender              Gender
   role                Role

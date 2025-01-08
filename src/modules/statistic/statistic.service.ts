@@ -177,6 +177,9 @@ export class StatisticService {
       where: {
         status: 'ACTIVE',
         sold_quantity: { gte: 1 },
+        Category: {
+          is_disable: false,
+        },
       },
       include: {
         Category: true,
