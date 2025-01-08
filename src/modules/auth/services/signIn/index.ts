@@ -58,7 +58,7 @@ class SignInService {
   public async SignInByPhone(body: SignInByPhoneDto, res: Response) {
     const { phone, password } = body;
     const CAUSE = 'Phone or password is incorrect';
-    const user = await this.prisma.users.findUnique({
+    const user = await this.prisma.users.findFirst({
       where: { phone: phone },
       select: {
         id: true,
